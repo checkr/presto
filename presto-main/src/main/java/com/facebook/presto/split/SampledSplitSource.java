@@ -13,8 +13,8 @@
  */
 package com.facebook.presto.split;
 
-import com.facebook.presto.connector.ConnectorId;
 import com.facebook.presto.execution.Lifespan;
+import com.facebook.presto.spi.ConnectorId;
 import com.facebook.presto.spi.connector.ConnectorPartitionHandle;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.google.common.util.concurrent.Futures;
@@ -25,6 +25,7 @@ import javax.annotation.Nullable;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import static java.util.Objects.requireNonNull;
 
 public class SampledSplitSource
@@ -60,7 +61,13 @@ public class SampledSplitSource
                 splitBatch.getSplits().stream()
                         .filter(input -> ThreadLocalRandom.current().nextDouble() < sampleRatio)
                         .collect(toImmutableList()),
-                splitBatch.isLastBatch()));
+                splitBatch.isLastBatch()), directExecutor());
+    }
+
+    @Override
+    public void rewind(ConnectorPartitionHandle partitionHandle)
+    {
+        splitSource.rewind(partitionHandle);
     }
 
     @Override

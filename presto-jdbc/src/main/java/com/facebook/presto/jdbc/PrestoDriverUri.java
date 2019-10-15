@@ -15,6 +15,7 @@ package com.facebook.presto.jdbc;
 
 import com.facebook.presto.client.ClientException;
 import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.common.net.HostAndPort;
 import okhttp3.OkHttpClient;
@@ -37,6 +38,10 @@ import static com.facebook.presto.client.OkHttpUtil.setupHttpProxy;
 import static com.facebook.presto.client.OkHttpUtil.setupKerberos;
 import static com.facebook.presto.client.OkHttpUtil.setupSocksProxy;
 import static com.facebook.presto.client.OkHttpUtil.setupSsl;
+import static com.facebook.presto.client.OkHttpUtil.tokenAuth;
+import static com.facebook.presto.jdbc.ConnectionProperties.ACCESS_TOKEN;
+import static com.facebook.presto.jdbc.ConnectionProperties.APPLICATION_NAME_PREFIX;
+import static com.facebook.presto.jdbc.ConnectionProperties.EXTRA_CREDENTIALS;
 import static com.facebook.presto.jdbc.ConnectionProperties.HTTP_PROXY;
 import static com.facebook.presto.jdbc.ConnectionProperties.KERBEROS_CONFIG_PATH;
 import static com.facebook.presto.jdbc.ConnectionProperties.KERBEROS_CREDENTIAL_CACHE_PATH;
@@ -123,9 +128,21 @@ final class PrestoDriverUri
         return USER.getRequiredValue(properties);
     }
 
+    public Optional<String> getApplicationNamePrefix()
+            throws SQLException
+    {
+        return APPLICATION_NAME_PREFIX.getValue(properties);
+    }
+
     public Properties getProperties()
     {
         return properties;
+    }
+
+    public Map<String, String> getExtraCredentials()
+            throws SQLException
+    {
+        return EXTRA_CREDENTIALS.getValue(properties).orElse(ImmutableMap.of());
     }
 
     public void setupClient(OkHttpClient.Builder builder)
@@ -167,6 +184,13 @@ final class PrestoDriverUri
                         KERBEROS_KEYTAB_PATH.getValue(properties),
                         Optional.ofNullable(KERBEROS_CREDENTIAL_CACHE_PATH.getValue(properties)
                                 .orElseGet(() -> defaultCredentialCachePath().map(File::new).orElse(null))));
+            }
+
+            if (ACCESS_TOKEN.getValue(properties).isPresent()) {
+                if (!useSecureConnection) {
+                    throw new SQLException("Authentication using an access token requires SSL to be enabled");
+                }
+                builder.addInterceptor(tokenAuth(ACCESS_TOKEN.getValue(properties).get()));
             }
         }
         catch (ClientException e) {

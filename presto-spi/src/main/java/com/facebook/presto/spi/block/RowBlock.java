@@ -15,6 +15,9 @@ package com.facebook.presto.spi.block;
 
 import org.openjdk.jol.info.ClassLayout;
 
+import javax.annotation.Nullable;
+
+import java.util.Optional;
 import java.util.function.BiConsumer;
 
 import static io.airlift.slice.SizeOf.sizeOf;
@@ -23,6 +26,7 @@ import static java.util.Objects.requireNonNull;
 
 public class RowBlock
         extends AbstractRowBlock
+        implements Block
 {
     private static final int INSTANCE_SIZE = ClassLayout.parseClass(RowBlock.class).instanceSize();
 
@@ -36,29 +40,29 @@ public class RowBlock
     private volatile long sizeInBytes;
     private final long retainedSizeInBytes;
 
-    public static Block fromFieldBlocks(int positionCount, boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
+    /**
+     * Create a row block directly from columnar nulls and field blocks.
+     */
+    public static Block fromFieldBlocks(int positionCount, Optional<boolean[]> rowIsNull, Block[] fieldBlocks)
     {
-        validateConstructorArguments(0, positionCount, rowIsNull, fieldBlockOffsets, fieldBlocks);
+        int[] fieldBlockOffsets = new int[positionCount + 1];
         for (int position = 0; position < positionCount; position++) {
-            if (rowIsNull[position]) {
-                if (fieldBlockOffsets[position + 1] - fieldBlockOffsets[position] != 0) {
-                    throw new IllegalArgumentException("A null row must have zero entries");
-                }
-            }
+            fieldBlockOffsets[position + 1] = fieldBlockOffsets[position] + (rowIsNull.isPresent() && rowIsNull.get()[position] ? 0 : 1);
         }
-        return new RowBlock(0, positionCount, rowIsNull, fieldBlockOffsets, fieldBlocks);
+        validateConstructorArguments(0, positionCount, rowIsNull.orElse(null), fieldBlockOffsets, fieldBlocks);
+        return new RowBlock(0, positionCount, rowIsNull.orElse(null), fieldBlockOffsets, fieldBlocks);
     }
 
     /**
      * Create a row block directly without per element validations.
      */
-    static RowBlock createRowBlockInternal(int startOffset, int positionCount, boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
+    static RowBlock createRowBlockInternal(int startOffset, int positionCount, @Nullable boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
     {
         validateConstructorArguments(startOffset, positionCount, rowIsNull, fieldBlockOffsets, fieldBlocks);
         return new RowBlock(startOffset, positionCount, rowIsNull, fieldBlockOffsets, fieldBlocks);
     }
 
-    private static void validateConstructorArguments(int startOffset, int positionCount, boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
+    private static void validateConstructorArguments(int startOffset, int positionCount, @Nullable boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
     {
         if (startOffset < 0) {
             throw new IllegalArgumentException("arrayOffset is negative");
@@ -68,8 +72,7 @@ public class RowBlock
             throw new IllegalArgumentException("positionCount is negative");
         }
 
-        requireNonNull(rowIsNull, "rowIsNull is null");
-        if (rowIsNull.length - startOffset < positionCount) {
+        if (rowIsNull != null && rowIsNull.length - startOffset < positionCount) {
             throw new IllegalArgumentException("rowIsNull length is less than positionCount");
         }
 
@@ -96,7 +99,7 @@ public class RowBlock
      * Use createRowBlockInternal or fromFieldBlocks instead of this method.  The caller of this method is assumed to have
      * validated the arguments with validateConstructorArguments.
      */
-    private RowBlock(int startOffset, int positionCount, boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
+    private RowBlock(int startOffset, int positionCount, @Nullable boolean[] rowIsNull, int[] fieldBlockOffsets, Block[] fieldBlocks)
     {
         super(fieldBlocks.length);
 
@@ -115,7 +118,7 @@ public class RowBlock
     }
 
     @Override
-    protected Block[] getFieldBlocks()
+    protected Block[] getRawFieldBlocks()
     {
         return fieldBlocks;
     }
@@ -127,12 +130,13 @@ public class RowBlock
     }
 
     @Override
-    protected int getOffsetBase()
+    public int getOffsetBase()
     {
         return startOffset;
     }
 
     @Override
+    @Nullable
     protected boolean[] getRowIsNull()
     {
         return rowIsNull;
@@ -187,5 +191,29 @@ public class RowBlock
     public String toString()
     {
         return format("RowBlock{numFields=%d, positionCount=%d}", numFields, getPositionCount());
+    }
+
+    @Override
+    public Block getLoadedBlock()
+    {
+        boolean allLoaded = true;
+        Block[] loadedFieldBlocks = new Block[fieldBlocks.length];
+
+        for (int i = 0; i < fieldBlocks.length; i++) {
+            loadedFieldBlocks[i] = fieldBlocks[i].getLoadedBlock();
+            if (loadedFieldBlocks[i] != fieldBlocks[i]) {
+                allLoaded = false;
+            }
+        }
+
+        if (allLoaded) {
+            return this;
+        }
+        return createRowBlockInternal(
+                startOffset,
+                positionCount,
+                rowIsNull,
+                fieldBlockOffsets,
+                loadedFieldBlocks);
     }
 }

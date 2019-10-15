@@ -16,7 +16,6 @@ package com.facebook.presto.connector.thrift.api.datatypes;
 import com.facebook.presto.connector.thrift.api.PrestoThriftBlock;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
-import com.facebook.presto.spi.block.BlockBuilderStatus;
 import org.testng.annotations.Test;
 
 import java.util.Arrays;
@@ -157,14 +156,14 @@ public class TestPrestoThriftBigint
                 assertTrue(block.isNull(i));
             }
             else {
-                assertEquals(block.getLong(i, 0), expected.get(i).longValue());
+                assertEquals(block.getLong(i), expected.get(i).longValue());
             }
         }
     }
 
     private static Block longBlock(Integer... values)
     {
-        BlockBuilder blockBuilder = BIGINT.createBlockBuilder(new BlockBuilderStatus(), values.length);
+        BlockBuilder blockBuilder = BIGINT.createBlockBuilder(null, values.length);
         for (Integer value : values) {
             if (value == null) {
                 blockBuilder.appendNull();

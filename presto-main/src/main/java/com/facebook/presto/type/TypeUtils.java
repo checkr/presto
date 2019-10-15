@@ -19,11 +19,12 @@ import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
+import com.facebook.presto.spi.type.DecimalType;
 import com.facebook.presto.spi.type.FixedWidthType;
+import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.TypeManager;
 import com.facebook.presto.spi.type.TypeSignature;
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slice;
 
@@ -33,11 +34,12 @@ import java.util.List;
 import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Throwables.throwIfUnchecked;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 
 public final class TypeUtils
 {
-    public static final int NULL_HASH_CODE = 0;
+    public static final long NULL_HASH_CODE = 0;
 
     private TypeUtils()
     {
@@ -85,7 +87,8 @@ public final class TypeUtils
             }
         }
         catch (Throwable throwable) {
-            throw Throwables.propagate(throwable);
+            throwIfUnchecked(throwable);
+            throw new RuntimeException(throwable);
         }
     }
 
@@ -101,9 +104,23 @@ public final class TypeUtils
 
     public static Type resolveType(TypeSignature typeName, TypeManager typeManager)
     {
-        Type type = typeManager.getType(typeName);
-        checkArgument(type != null, "Type '%s' not found", typeName);
-        return type;
+        return typeManager.getType(typeName);
+    }
+
+    public static boolean isIntegralType(TypeSignature typeName, TypeManager typeManager)
+    {
+        switch (typeName.getBase()) {
+            case StandardTypes.BIGINT:
+            case StandardTypes.INTEGER:
+            case StandardTypes.SMALLINT:
+            case StandardTypes.TINYINT:
+                return true;
+            case StandardTypes.DECIMAL:
+                DecimalType decimalType = (DecimalType) resolveType(typeName, typeManager);
+                return decimalType.getScale() == 0;
+            default:
+                return false;
+        }
     }
 
     public static List<Type> resolveTypes(List<TypeSignature> typeNames, TypeManager typeManager)

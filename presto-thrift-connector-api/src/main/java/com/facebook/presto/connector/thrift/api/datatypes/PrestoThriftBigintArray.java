@@ -13,27 +13,28 @@
  */
 package com.facebook.presto.connector.thrift.api.datatypes;
 
+import com.facebook.drift.annotations.ThriftConstructor;
+import com.facebook.drift.annotations.ThriftField;
+import com.facebook.drift.annotations.ThriftStruct;
 import com.facebook.presto.connector.thrift.api.PrestoThriftBlock;
 import com.facebook.presto.spi.block.AbstractArrayBlock;
 import com.facebook.presto.spi.block.ArrayBlock;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.LongArrayBlock;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.swift.codec.ThriftConstructor;
-import com.facebook.swift.codec.ThriftField;
-import com.facebook.swift.codec.ThriftStruct;
 
 import javax.annotation.Nullable;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 
+import static com.facebook.drift.annotations.ThriftField.Requiredness.OPTIONAL;
 import static com.facebook.presto.connector.thrift.api.PrestoThriftBlock.bigintArrayData;
 import static com.facebook.presto.connector.thrift.api.datatypes.PrestoThriftTypeUtils.calculateOffsets;
 import static com.facebook.presto.connector.thrift.api.datatypes.PrestoThriftTypeUtils.sameSizeIfPresent;
 import static com.facebook.presto.connector.thrift.api.datatypes.PrestoThriftTypeUtils.totalSize;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
-import static com.facebook.swift.codec.ThriftField.Requiredness.OPTIONAL;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -95,9 +96,9 @@ public final class PrestoThriftBigintArray
         int numberOfRecords = numberOfRecords();
         return ArrayBlock.fromElementBlock(
                 numberOfRecords,
-                nulls == null ? new boolean[numberOfRecords] : nulls,
+                Optional.of(nulls == null ? new boolean[numberOfRecords] : nulls),
                 calculateOffsets(sizes, nulls, numberOfRecords),
-                values != null ? values.toBlock(BIGINT) : new LongArrayBlock(0, new boolean[] {}, new long[] {}));
+                values != null ? values.toBlock(BIGINT) : new LongArrayBlock(0, Optional.empty(), new long[] {}));
     }
 
     @Override

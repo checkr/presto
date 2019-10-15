@@ -13,8 +13,7 @@
  */
 package com.facebook.presto.tests.statistics;
 
-import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.sql.planner.Symbol;
+import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.google.common.collect.ImmutableMap;
 
 import java.util.Map;
@@ -23,24 +22,16 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 public class StatsContext
 {
-    private final Map<String, Symbol> columnSymbols;
-    private final Map<Symbol, Type> symbolTypes;
+    private final Map<String, VariableReferenceExpression> columnVariables;
 
-    public StatsContext(Map<String, Symbol> columnSymbols, Map<Symbol, Type> symbolTypes)
+    public StatsContext(Map<String, VariableReferenceExpression> columnVariables)
     {
-        this.columnSymbols = ImmutableMap.copyOf(columnSymbols);
-        this.symbolTypes = ImmutableMap.copyOf(symbolTypes);
+        this.columnVariables = ImmutableMap.copyOf(columnVariables);
     }
 
-    public Symbol getSymbolForColumn(String columnName)
+    public VariableReferenceExpression getVariableForColumn(String columnName)
     {
-        checkArgument(columnSymbols.containsKey(columnName), "no symbol found for column '" + columnName + "'");
-        return columnSymbols.get(columnName);
-    }
-
-    public Type getTypeForSymbol(Symbol symbol)
-    {
-        checkArgument(symbolTypes.containsKey(symbol), "no type found found for symbol '" + symbol + "'");
-        return symbolTypes.get(symbol);
+        checkArgument(columnVariables.containsKey(columnName), "no variable found for column '" + columnName + "'");
+        return columnVariables.get(columnName);
     }
 }

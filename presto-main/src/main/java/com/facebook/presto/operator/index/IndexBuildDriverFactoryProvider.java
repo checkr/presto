@@ -16,8 +16,8 @@ package com.facebook.presto.operator.index;
 import com.facebook.presto.operator.DriverFactory;
 import com.facebook.presto.operator.OperatorFactory;
 import com.facebook.presto.spi.Page;
+import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.sql.planner.plan.PlanNodeId;
 import com.google.common.collect.ImmutableList;
 
 import java.util.List;
@@ -40,9 +40,16 @@ public class IndexBuildDriverFactoryProvider
     private final List<Type> outputTypes;
     private final Optional<DynamicTupleFilterFactory> dynamicTupleFilterFactory;
 
-    public IndexBuildDriverFactoryProvider(int pipelineId, int outputOperatorId, PlanNodeId planNodeId, boolean inputDriver, List<OperatorFactory> coreOperatorFactories, Optional<DynamicTupleFilterFactory> dynamicTupleFilterFactory)
+    public IndexBuildDriverFactoryProvider(int pipelineId,
+            int outputOperatorId,
+            PlanNodeId planNodeId,
+            boolean inputDriver,
+            List<Type> outputTypes,
+            List<OperatorFactory> coreOperatorFactories,
+            Optional<DynamicTupleFilterFactory> dynamicTupleFilterFactory)
     {
         requireNonNull(planNodeId, "planNodeId is null");
+        requireNonNull(outputTypes, "outputTypes is null");
         requireNonNull(coreOperatorFactories, "coreOperatorFactories is null");
         checkArgument(!coreOperatorFactories.isEmpty(), "coreOperatorFactories is empty");
         requireNonNull(dynamicTupleFilterFactory, "dynamicTupleFilterFactory is null");
@@ -52,7 +59,7 @@ public class IndexBuildDriverFactoryProvider
         this.planNodeId = planNodeId;
         this.inputDriver = inputDriver;
         this.coreOperatorFactories = ImmutableList.copyOf(coreOperatorFactories);
-        this.outputTypes = ImmutableList.copyOf(this.coreOperatorFactories.get(this.coreOperatorFactories.size() - 1).getTypes());
+        this.outputTypes = ImmutableList.copyOf(outputTypes);
         this.dynamicTupleFilterFactory = dynamicTupleFilterFactory;
     }
 
