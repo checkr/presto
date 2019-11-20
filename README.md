@@ -40,9 +40,9 @@ Manually resolve issues merging checkr changes to FileBasedAccessControl.java to
 3) Change class name of Identity parameters to ConnectorIdentity
 4) Remove unused imports
 
-## Build presto-server module:
+## Build all modules:
 ```
-mvn clean install -pl presto-server -DskipTests
+./mvnw clean install -DskipTests
 ```
 
 ## Copy compiled files
