@@ -30,6 +30,7 @@ import com.facebook.presto.spi.ConnectorTableHandle;
 import com.facebook.presto.spi.ConnectorTableMetadata;
 import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.Page;
+import com.facebook.presto.spi.PageSinkProperties;
 import com.facebook.presto.spi.SchemaTableName;
 import com.facebook.presto.spi.connector.ConnectorMetadata;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
@@ -105,7 +106,7 @@ public class TestRaptorConnector
         connector = new RaptorConnector(
                 new LifeCycleManager(ImmutableList.of(), null),
                 new TestingNodeManager(),
-                new RaptorMetadataFactory(connectorId, dbi, shardManager),
+                new RaptorMetadataFactory(connectorId, dbi, shardManager, new TypeRegistry()),
                 new RaptorSplitManager(connectorId, nodeSupplier, shardManager, false),
                 new RaptorPageSourceProvider(storageManager),
                 new RaptorPageSinkProvider(storageManager,
@@ -117,7 +118,8 @@ public class TestRaptorConnector
                 new RaptorTableProperties(typeRegistry),
                 ImmutableSet.of(),
                 new AllowAllAccessControl(),
-                dbi);
+                dbi,
+                ImmutableSet.of());
     }
 
     @AfterMethod(alwaysRun = true)
@@ -217,6 +219,7 @@ public class TestRaptorConnector
         ConnectorSession session = new TestingConnectorSession(
                 "user",
                 Optional.of("test"),
+                Optional.empty(),
                 getTimeZoneKey(userTimeZone),
                 ENGLISH,
                 System.currentTimeMillis(),
@@ -237,7 +240,7 @@ public class TestRaptorConnector
         ConnectorTransactionHandle txn1 = connector.beginTransaction(READ_COMMITTED, false);
         ConnectorTableHandle handle1 = getTableHandle(connector.getMetadata(txn1), "test");
         ConnectorInsertTableHandle insertTableHandle = connector.getMetadata(txn1).beginInsert(session, handle1);
-        ConnectorPageSink raptorPageSink = connector.getPageSinkProvider().createPageSink(txn1, session, insertTableHandle);
+        ConnectorPageSink raptorPageSink = connector.getPageSinkProvider().createPageSink(txn1, session, insertTableHandle, PageSinkProperties.defaultProperties());
 
         Object timestamp1 = null;
         Object timestamp2 = null;

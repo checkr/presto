@@ -75,9 +75,9 @@ public class TestCanonicalize
                                         .addFunction(functionCall("row_number", Optional.empty(), ImmutableList.of())),
                                 values("A"))),
                 ImmutableList.of(
-                        new UnaliasSymbolReferences(),
+                        new UnaliasSymbolReferences(getMetadata().getFunctionManager()),
                         new IterativeOptimizer(
-                                new StatsRecorder(),
+                                new RuleStatsRecorder(),
                                 getQueryRunner().getStatsCalculator(),
                                 getQueryRunner().getCostCalculator(),
                                 ImmutableSet.of(new RemoveRedundantIdentityProjections()))));

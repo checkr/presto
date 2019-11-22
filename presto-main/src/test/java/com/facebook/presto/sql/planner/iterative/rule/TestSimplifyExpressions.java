@@ -13,11 +13,12 @@
  */
 package com.facebook.presto.sql.planner.iterative.rule;
 
-import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.metadata.MetadataManager;
+import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.facebook.presto.sql.parser.SqlParser;
-import com.facebook.presto.sql.planner.Symbol;
-import com.facebook.presto.sql.planner.SymbolAllocator;
-import com.facebook.presto.sql.planner.SymbolsExtractor;
+import com.facebook.presto.sql.planner.LiteralEncoder;
+import com.facebook.presto.sql.planner.PlanVariableAllocator;
+import com.facebook.presto.sql.planner.VariablesExtractor;
 import com.facebook.presto.sql.tree.Expression;
 import com.facebook.presto.sql.tree.ExpressionRewriter;
 import com.facebook.presto.sql.tree.ExpressionTreeRewriter;
@@ -26,8 +27,7 @@ import org.testng.annotations.Test;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.metadata.MetadataManager.createTestMetadataManager;
@@ -36,12 +36,15 @@ import static com.facebook.presto.sql.ExpressionUtils.binaryExpression;
 import static com.facebook.presto.sql.ExpressionUtils.extractPredicates;
 import static com.facebook.presto.sql.ExpressionUtils.rewriteIdentifiersToSymbolReferences;
 import static com.facebook.presto.sql.planner.iterative.rule.SimplifyExpressions.rewrite;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static java.util.stream.Collectors.toList;
 import static org.testng.Assert.assertEquals;
 
 public class TestSimplifyExpressions
 {
     private static final SqlParser SQL_PARSER = new SqlParser();
+    private static final MetadataManager METADATA = createTestMetadataManager();
+    private static final LiteralEncoder LITERAL_ENCODER = new LiteralEncoder(METADATA.getBlockEncodingSerde());
 
     @Test
     public void testPushesDownNegations()
@@ -114,16 +117,17 @@ public class TestSimplifyExpressions
     {
         Expression actualExpression = rewriteIdentifiersToSymbolReferences(SQL_PARSER.createExpression(expression));
         Expression expectedExpression = rewriteIdentifiersToSymbolReferences(SQL_PARSER.createExpression(expected));
-        Expression rewritten = rewrite(actualExpression, TEST_SESSION, new SymbolAllocator(booleanSymbolTypeMapFor(actualExpression)), createTestMetadataManager(), SQL_PARSER);
+        Expression rewritten = rewrite(actualExpression, TEST_SESSION, new PlanVariableAllocator(booleanVariablesFor(actualExpression)), METADATA, LITERAL_ENCODER, SQL_PARSER);
         assertEquals(
                 normalize(rewritten),
                 normalize(expectedExpression));
     }
 
-    private static Map<Symbol, Type> booleanSymbolTypeMapFor(Expression expression)
+    private static Set<VariableReferenceExpression> booleanVariablesFor(Expression expression)
     {
-        return SymbolsExtractor.extractUnique(expression).stream()
-                .collect(Collectors.toMap(symbol -> symbol, symbol -> BOOLEAN));
+        return VariablesExtractor.extractAllSymbols(expression).stream()
+                .map(symbol -> new VariableReferenceExpression(symbol.getName(), BOOLEAN))
+                .collect(toImmutableSet());
     }
 
     private static Expression normalize(Expression expression)
@@ -137,11 +141,11 @@ public class TestSimplifyExpressions
         @Override
         public Expression rewriteLogicalBinaryExpression(LogicalBinaryExpression node, Void context, ExpressionTreeRewriter<Void> treeRewriter)
         {
-            List<Expression> predicates = extractPredicates(node.getType(), node).stream()
+            List<Expression> predicates = extractPredicates(node.getOperator(), node).stream()
                     .map(p -> treeRewriter.rewrite(p, context))
                     .sorted(Comparator.comparing(Expression::toString))
                     .collect(toList());
-            return binaryExpression(node.getType(), predicates);
+            return binaryExpression(node.getOperator(), predicates);
         }
     }
 }

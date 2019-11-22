@@ -13,12 +13,10 @@
  */
 package com.facebook.presto.hive.util;
 
-import com.facebook.presto.hive.DirectoryLister;
 import com.facebook.presto.hive.NamenodeStats;
 import com.facebook.presto.spi.PrestoException;
 import com.google.common.collect.AbstractIterator;
 import io.airlift.stats.TimeStat;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
@@ -30,7 +28,6 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 
-import static com.facebook.presto.hadoop.HadoopFileStatus.isDirectory;
 import static com.facebook.presto.hive.HiveErrorCode.HIVE_FILESYSTEM_ERROR;
 import static com.facebook.presto.hive.HiveErrorCode.HIVE_FILE_NOT_FOUND;
 import static java.util.Objects.requireNonNull;
@@ -46,8 +43,7 @@ public class HiveFileIterator
     }
 
     private final Deque<Path> paths = new ArrayDeque<>();
-    private final FileSystem fileSystem;
-    private final DirectoryLister directoryLister;
+    private final ListDirectoryOperation listDirectoryOperation;
     private final NamenodeStats namenodeStats;
     private final NestedDirectoryPolicy nestedDirectoryPolicy;
 
@@ -55,14 +51,12 @@ public class HiveFileIterator
 
     public HiveFileIterator(
             Path path,
-            FileSystem fileSystem,
-            DirectoryLister directoryLister,
+            ListDirectoryOperation listDirectoryOperation,
             NamenodeStats namenodeStats,
             NestedDirectoryPolicy nestedDirectoryPolicy)
     {
         paths.addLast(requireNonNull(path, "path is null"));
-        this.fileSystem = requireNonNull(fileSystem, "fileSystem is null");
-        this.directoryLister = requireNonNull(directoryLister, "directoryLister is null");
+        this.listDirectoryOperation = requireNonNull(listDirectoryOperation, "listDirectoryOperation is null");
         this.namenodeStats = requireNonNull(namenodeStats, "namenodeStats is null");
         this.nestedDirectoryPolicy = requireNonNull(nestedDirectoryPolicy, "nestedDirectoryPolicy is null");
     }
@@ -80,7 +74,7 @@ public class HiveFileIterator
                     continue;
                 }
 
-                if (isDirectory(status)) {
+                if (status.isDirectory()) {
                     switch (nestedDirectoryPolicy) {
                         case IGNORED:
                             continue;
@@ -105,7 +99,7 @@ public class HiveFileIterator
     private Iterator<LocatedFileStatus> getLocatedFileStatusRemoteIterator(Path path)
     {
         try (TimeStat.BlockTimer ignored = namenodeStats.getListLocatedStatus().time()) {
-            return new FileStatusIterator(path, fileSystem, directoryLister, namenodeStats);
+            return new FileStatusIterator(path, listDirectoryOperation, namenodeStats);
         }
     }
 
@@ -123,12 +117,12 @@ public class HiveFileIterator
         private final NamenodeStats namenodeStats;
         private final RemoteIterator<LocatedFileStatus> fileStatusIterator;
 
-        private FileStatusIterator(Path path, FileSystem fileSystem, DirectoryLister directoryLister, NamenodeStats namenodeStats)
+        private FileStatusIterator(Path path, ListDirectoryOperation listDirectoryOperation, NamenodeStats namenodeStats)
         {
             this.path = path;
             this.namenodeStats = namenodeStats;
             try {
-                this.fileStatusIterator = directoryLister.list(fileSystem, path);
+                this.fileStatusIterator = listDirectoryOperation.list(path);
             }
             catch (IOException e) {
                 throw processException(e);
@@ -161,7 +155,7 @@ public class HiveFileIterator
         {
             namenodeStats.getRemoteIteratorNext().recordException(exception);
             if (exception instanceof FileNotFoundException) {
-                throw new PrestoException(HIVE_FILE_NOT_FOUND, "Partition location does not exist: " + path);
+                return new PrestoException(HIVE_FILE_NOT_FOUND, "Partition location does not exist: " + path);
             }
             return new PrestoException(HIVE_FILESYSTEM_ERROR, "Failed to list directory: " + path, exception);
         }
@@ -174,5 +168,11 @@ public class HiveFileIterator
         {
             super("Nested sub-directories are not allowed");
         }
+    }
+
+    public interface ListDirectoryOperation
+    {
+        RemoteIterator<LocatedFileStatus> list(Path path)
+                throws IOException;
     }
 }

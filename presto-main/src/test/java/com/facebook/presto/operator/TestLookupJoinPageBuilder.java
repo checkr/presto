@@ -18,7 +18,6 @@ import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
-import com.facebook.presto.spi.block.BlockBuilderStatus;
 import com.facebook.presto.spi.block.DictionaryBlock;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
@@ -38,14 +37,14 @@ public class TestLookupJoinPageBuilder
     public void testPageBuilder()
     {
         int entries = 10_000;
-        BlockBuilder blockBuilder = BIGINT.createBlockBuilder(new BlockBuilderStatus(), entries);
+        BlockBuilder blockBuilder = BIGINT.createBlockBuilder(null, entries);
         for (int i = 0; i < entries; i++) {
             BIGINT.writeLong(blockBuilder, i);
         }
         Block block = blockBuilder.build();
         Page page = new Page(block, block);
 
-        JoinProbeFactory joinProbeFactory = new JoinProbeFactory(new int[]{0, 1}, ImmutableList.of(0, 1), OptionalInt.empty());
+        JoinProbeFactory joinProbeFactory = new JoinProbeFactory(new int[] {0, 1}, ImmutableList.of(0, 1), OptionalInt.empty());
         JoinProbe probe = joinProbeFactory.createJoinProbe(page);
         LookupSource lookupSource = new TestLookupSource(ImmutableList.of(BIGINT, BIGINT), page);
         LookupJoinPageBuilder lookupJoinPageBuilder = new LookupJoinPageBuilder(ImmutableList.of(BIGINT, BIGINT));
@@ -64,13 +63,13 @@ public class TestLookupJoinPageBuilder
         for (int i = 0; i < output.getPositionCount(); i++) {
             assertFalse(output.getBlock(0).isNull(i));
             assertFalse(output.getBlock(1).isNull(i));
-            assertEquals(output.getBlock(0).getLong(i, 0), i / 2);
-            assertEquals(output.getBlock(1).getLong(i, 0), i / 2);
+            assertEquals(output.getBlock(0).getLong(i), i / 2);
+            assertEquals(output.getBlock(1).getLong(i), i / 2);
             if (i % 2 == 0) {
                 assertFalse(output.getBlock(2).isNull(i));
                 assertFalse(output.getBlock(3).isNull(i));
-                assertEquals(output.getBlock(2).getLong(i, 0), i / 2);
-                assertEquals(output.getBlock(3).getLong(i, 0), i / 2);
+                assertEquals(output.getBlock(2).getLong(i), i / 2);
+                assertEquals(output.getBlock(3).getLong(i), i / 2);
             }
             else {
                 assertTrue(output.getBlock(2).isNull(i));
@@ -93,7 +92,7 @@ public class TestLookupJoinPageBuilder
         }
         Block block = blockBuilder.build();
         Page page = new Page(block);
-        JoinProbeFactory joinProbeFactory = new JoinProbeFactory(new int[]{0}, ImmutableList.of(0), OptionalInt.empty());
+        JoinProbeFactory joinProbeFactory = new JoinProbeFactory(new int[] {0}, ImmutableList.of(0), OptionalInt.empty());
         LookupSource lookupSource = new TestLookupSource(ImmutableList.of(BIGINT), page);
         LookupJoinPageBuilder lookupJoinPageBuilder = new LookupJoinPageBuilder(ImmutableList.of(BIGINT));
 
@@ -118,8 +117,8 @@ public class TestLookupJoinPageBuilder
         assertTrue(output.getBlock(0) instanceof DictionaryBlock);
         assertEquals(output.getPositionCount(), entries / 2);
         for (int i = 0; i < entries / 2; i++) {
-            assertEquals(output.getBlock(0).getLong(i, 0), i * 2);
-            assertEquals(output.getBlock(1).getLong(i, 0), i * 2);
+            assertEquals(output.getBlock(0).getLong(i), i * 2);
+            assertEquals(output.getBlock(1).getLong(i), i * 2);
         }
         lookupJoinPageBuilder.reset();
 
@@ -133,8 +132,8 @@ public class TestLookupJoinPageBuilder
         assertFalse(output.getBlock(0) instanceof DictionaryBlock);
         assertEquals(output.getPositionCount(), entries);
         for (int i = 0; i < entries; i++) {
-            assertEquals(output.getBlock(0).getLong(i, 0), i);
-            assertEquals(output.getBlock(1).getLong(i, 0), i);
+            assertEquals(output.getBlock(0).getLong(i), i);
+            assertEquals(output.getBlock(1).getLong(i), i);
         }
         lookupJoinPageBuilder.reset();
 
@@ -151,21 +150,21 @@ public class TestLookupJoinPageBuilder
         assertFalse(output.getBlock(0) instanceof DictionaryBlock);
         assertEquals(output.getPositionCount(), 40);
         for (int i = 10; i < 50; i++) {
-            assertEquals(output.getBlock(0).getLong(i - 10, 0), i);
-            assertEquals(output.getBlock(1).getLong(i - 10, 0), i);
+            assertEquals(output.getBlock(0).getLong(i - 10), i);
+            assertEquals(output.getBlock(1).getLong(i - 10), i);
         }
     }
 
     @Test
     public void testCrossJoinWithEmptyBuild()
     {
-        BlockBuilder blockBuilder = BIGINT.createBlockBuilder(new BlockBuilderStatus(), 1);
+        BlockBuilder blockBuilder = BIGINT.createBlockBuilder(null, 1);
         BIGINT.writeLong(blockBuilder, 0);
         Page page = new Page(blockBuilder.build());
 
         // nothing on the build side so we don't append anything
         LookupSource lookupSource = new TestLookupSource(ImmutableList.of(), page);
-        JoinProbe probe = (new JoinProbeFactory(new int[]{0}, ImmutableList.of(0), OptionalInt.empty())).createJoinProbe(page);
+        JoinProbe probe = (new JoinProbeFactory(new int[] {0}, ImmutableList.of(0), OptionalInt.empty())).createJoinProbe(page);
         LookupJoinPageBuilder lookupJoinPageBuilder = new LookupJoinPageBuilder(ImmutableList.of(BIGINT));
 
         // append the same row many times should also flush in the end
@@ -186,6 +185,12 @@ public class TestLookupJoinPageBuilder
         {
             this.types = types;
             this.page = page;
+        }
+
+        @Override
+        public boolean isEmpty()
+        {
+            throw new UnsupportedOperationException();
         }
 
         @Override

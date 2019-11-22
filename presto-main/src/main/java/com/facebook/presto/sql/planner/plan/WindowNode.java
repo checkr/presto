@@ -13,12 +13,12 @@
  */
 package com.facebook.presto.sql.planner.plan;
 
-import com.facebook.presto.metadata.Signature;
-import com.facebook.presto.sql.planner.OrderingScheme;
-import com.facebook.presto.sql.planner.Symbol;
-import com.facebook.presto.sql.tree.FrameBound;
-import com.facebook.presto.sql.tree.FunctionCall;
-import com.facebook.presto.sql.tree.WindowFrame;
+import com.facebook.presto.spi.function.FunctionHandle;
+import com.facebook.presto.spi.plan.OrderingScheme;
+import com.facebook.presto.spi.plan.PlanNode;
+import com.facebook.presto.spi.plan.PlanNodeId;
+import com.facebook.presto.spi.relation.CallExpression;
+import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
@@ -36,28 +36,27 @@ import java.util.Set;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Iterables.concat;
 import static java.util.Objects.requireNonNull;
 
 @Immutable
 public class WindowNode
-        extends PlanNode
+        extends InternalPlanNode
 {
     private final PlanNode source;
-    private final Set<Symbol> prePartitionedInputs;
+    private final Set<VariableReferenceExpression> prePartitionedInputs;
     private final Specification specification;
     private final int preSortedOrderPrefix;
-    private final Map<Symbol, Function> windowFunctions;
-    private final Optional<Symbol> hashSymbol;
+    private final Map<VariableReferenceExpression, Function> windowFunctions;
+    private final Optional<VariableReferenceExpression> hashVariable;
 
     @JsonCreator
     public WindowNode(
             @JsonProperty("id") PlanNodeId id,
             @JsonProperty("source") PlanNode source,
             @JsonProperty("specification") Specification specification,
-            @JsonProperty("windowFunctions") Map<Symbol, Function> windowFunctions,
-            @JsonProperty("hashSymbol") Optional<Symbol> hashSymbol,
-            @JsonProperty("prePartitionedInputs") Set<Symbol> prePartitionedInputs,
+            @JsonProperty("windowFunctions") Map<VariableReferenceExpression, Function> windowFunctions,
+            @JsonProperty("hashVariable") Optional<VariableReferenceExpression> hashVariable,
+            @JsonProperty("prePartitionedInputs") Set<VariableReferenceExpression> prePartitionedInputs,
             @JsonProperty("preSortedOrderPrefix") int preSortedOrderPrefix)
     {
         super(id);
@@ -65,17 +64,17 @@ public class WindowNode
         requireNonNull(source, "source is null");
         requireNonNull(specification, "specification is null");
         requireNonNull(windowFunctions, "windowFunctions is null");
-        requireNonNull(hashSymbol, "hashSymbol is null");
+        requireNonNull(hashVariable, "hashVariable is null");
         checkArgument(specification.getPartitionBy().containsAll(prePartitionedInputs), "prePartitionedInputs must be contained in partitionBy");
         Optional<OrderingScheme> orderingScheme = specification.getOrderingScheme();
-        checkArgument(preSortedOrderPrefix == 0 || (orderingScheme.isPresent() && preSortedOrderPrefix <= orderingScheme.get().getOrderBy().size()), "Cannot have sorted more symbols than those requested");
+        checkArgument(preSortedOrderPrefix == 0 || (orderingScheme.isPresent() && preSortedOrderPrefix <= orderingScheme.get().getOrderByVariables().size()), "Cannot have sorted more symbols than those requested");
         checkArgument(preSortedOrderPrefix == 0 || ImmutableSet.copyOf(prePartitionedInputs).equals(ImmutableSet.copyOf(specification.getPartitionBy())), "preSortedOrderPrefix can only be greater than zero if all partition symbols are pre-partitioned");
 
         this.source = source;
         this.prePartitionedInputs = ImmutableSet.copyOf(prePartitionedInputs);
         this.specification = specification;
         this.windowFunctions = ImmutableMap.copyOf(windowFunctions);
-        this.hashSymbol = hashSymbol;
+        this.hashVariable = hashVariable;
         this.preSortedOrderPrefix = preSortedOrderPrefix;
     }
 
@@ -86,14 +85,17 @@ public class WindowNode
     }
 
     @Override
-    public List<Symbol> getOutputSymbols()
+    public List<VariableReferenceExpression> getOutputVariables()
     {
-        return ImmutableList.copyOf(concat(source.getOutputSymbols(), windowFunctions.keySet()));
+        return ImmutableList.<VariableReferenceExpression>builder()
+                .addAll(source.getOutputVariables())
+                .addAll(windowFunctions.keySet())
+                .build();
     }
 
-    public Set<Symbol> getCreatedSymbols()
+    public Set<VariableReferenceExpression> getCreatedVariable()
     {
-        return ImmutableSet.copyOf(windowFunctions.keySet());
+        return windowFunctions.keySet();
     }
 
     @JsonProperty
@@ -108,7 +110,7 @@ public class WindowNode
         return specification;
     }
 
-    public List<Symbol> getPartitionBy()
+    public List<VariableReferenceExpression> getPartitionBy()
     {
         return specification.getPartitionBy();
     }
@@ -119,7 +121,7 @@ public class WindowNode
     }
 
     @JsonProperty
-    public Map<Symbol, Function> getWindowFunctions()
+    public Map<VariableReferenceExpression, Function> getWindowFunctions()
     {
         return windowFunctions;
     }
@@ -132,13 +134,13 @@ public class WindowNode
     }
 
     @JsonProperty
-    public Optional<Symbol> getHashSymbol()
+    public Optional<VariableReferenceExpression> getHashVariable()
     {
-        return hashSymbol;
+        return hashVariable;
     }
 
     @JsonProperty
-    public Set<Symbol> getPrePartitionedInputs()
+    public Set<VariableReferenceExpression> getPrePartitionedInputs()
     {
         return prePartitionedInputs;
     }
@@ -150,7 +152,7 @@ public class WindowNode
     }
 
     @Override
-    public <R, C> R accept(PlanVisitor<R, C> visitor, C context)
+    public <R, C> R accept(InternalPlanVisitor<R, C> visitor, C context)
     {
         return visitor.visitWindow(this, context);
     }
@@ -158,18 +160,18 @@ public class WindowNode
     @Override
     public PlanNode replaceChildren(List<PlanNode> newChildren)
     {
-        return new WindowNode(getId(), Iterables.getOnlyElement(newChildren), specification, windowFunctions, hashSymbol, prePartitionedInputs, preSortedOrderPrefix);
+        return new WindowNode(getId(), Iterables.getOnlyElement(newChildren), specification, windowFunctions, hashVariable, prePartitionedInputs, preSortedOrderPrefix);
     }
 
     @Immutable
     public static class Specification
     {
-        private final List<Symbol> partitionBy;
+        private final List<VariableReferenceExpression> partitionBy;
         private final Optional<OrderingScheme> orderingScheme;
 
         @JsonCreator
         public Specification(
-                @JsonProperty("partitionBy") List<Symbol> partitionBy,
+                @JsonProperty("partitionBy") List<VariableReferenceExpression> partitionBy,
                 @JsonProperty("orderingScheme") Optional<OrderingScheme> orderingScheme)
         {
             requireNonNull(partitionBy, "partitionBy is null");
@@ -180,7 +182,7 @@ public class WindowNode
         }
 
         @JsonProperty
-        public List<Symbol> getPartitionBy()
+        public List<VariableReferenceExpression> getPartitionBy()
         {
             return partitionBy;
         }
@@ -218,109 +220,148 @@ public class WindowNode
     @Immutable
     public static class Frame
     {
-        private final WindowFrame.Type type;
-        private final FrameBound.Type startType;
-        private final Optional<Symbol> startValue;
-        private final FrameBound.Type endType;
-        private final Optional<Symbol> endValue;
+        private final WindowType type;
+        private final BoundType startType;
+        private final Optional<VariableReferenceExpression> startValue;
+        private final BoundType endType;
+        private final Optional<VariableReferenceExpression> endValue;
+
+        // This information is only used for printing the plan.
+        private final Optional<String> originalStartValue;
+        private final Optional<String> originalEndValue;
 
         @JsonCreator
         public Frame(
-                @JsonProperty("type") WindowFrame.Type type,
-                @JsonProperty("startType") FrameBound.Type startType,
-                @JsonProperty("startValue") Optional<Symbol> startValue,
-                @JsonProperty("endType") FrameBound.Type endType,
-                @JsonProperty("endValue") Optional<Symbol> endValue)
+                @JsonProperty("type") WindowType type,
+                @JsonProperty("startType") BoundType startType,
+                @JsonProperty("startValue") Optional<VariableReferenceExpression> startValue,
+                @JsonProperty("endType") BoundType endType,
+                @JsonProperty("endValue") Optional<VariableReferenceExpression> endValue,
+                @JsonProperty("originalStartValue") Optional<String> originalStartValue,
+                @JsonProperty("originalEndValue") Optional<String> originalEndValue)
         {
             this.startType = requireNonNull(startType, "startType is null");
             this.startValue = requireNonNull(startValue, "startValue is null");
             this.endType = requireNonNull(endType, "endType is null");
             this.endValue = requireNonNull(endValue, "endValue is null");
             this.type = requireNonNull(type, "type is null");
+            this.originalStartValue = requireNonNull(originalStartValue, "originalStartValue is null");
+            this.originalEndValue = requireNonNull(originalEndValue, "originalEndValue is null");
+
+            if (startValue.isPresent()) {
+                checkArgument(originalStartValue.isPresent(), "originalStartValue must be present if startValue is present");
+            }
+
+            if (endValue.isPresent()) {
+                checkArgument(originalEndValue.isPresent(), "originalEndValue must be present if endValue is present");
+            }
         }
 
         @JsonProperty
-        public WindowFrame.Type getType()
+        public WindowType getType()
         {
             return type;
         }
 
         @JsonProperty
-        public FrameBound.Type getStartType()
+        public BoundType getStartType()
         {
             return startType;
         }
 
         @JsonProperty
-        public Optional<Symbol> getStartValue()
+        public Optional<VariableReferenceExpression> getStartValue()
         {
             return startValue;
         }
 
         @JsonProperty
-        public FrameBound.Type getEndType()
+        public BoundType getEndType()
         {
             return endType;
         }
 
         @JsonProperty
-        public Optional<Symbol> getEndValue()
+        public Optional<VariableReferenceExpression> getEndValue()
         {
             return endValue;
+        }
+
+        @JsonProperty
+        public Optional<String> getOriginalStartValue()
+        {
+            return originalStartValue;
+        }
+
+        @JsonProperty
+        public Optional<String> getOriginalEndValue()
+        {
+            return originalEndValue;
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Frame frame = (Frame) o;
+            return type == frame.type &&
+                    startType == frame.startType &&
+                    Objects.equals(startValue, frame.startValue) &&
+                    endType == frame.endType &&
+                    Objects.equals(endValue, frame.endValue);
         }
 
         @Override
         public int hashCode()
         {
-            return Objects.hash(type, startType, startValue, endType, endValue);
+            return Objects.hash(type, startType, startValue, endType, endValue, originalStartValue, originalEndValue);
         }
 
-        @Override
-        public boolean equals(Object obj)
+        public enum WindowType
         {
-            if (this == obj) {
-                return true;
-            }
-            if (obj == null || getClass() != obj.getClass()) {
-                return false;
-            }
-            Frame other = (Frame) obj;
-            return Objects.equals(this.type, other.type) &&
-                    Objects.equals(this.startType, other.startType) &&
-                    Objects.equals(this.startValue, other.startValue) &&
-                    Objects.equals(this.endType, other.endType) &&
-                    Objects.equals(this.endValue, other.endValue);
+            RANGE, ROWS
+        }
+
+        public enum BoundType
+        {
+            UNBOUNDED_PRECEDING,
+            PRECEDING,
+            CURRENT_ROW,
+            FOLLOWING,
+            UNBOUNDED_FOLLOWING
         }
     }
 
     @Immutable
     public static final class Function
     {
-        private final FunctionCall functionCall;
-        private final Signature signature;
+        private final CallExpression functionCall;
         private final Frame frame;
 
         @JsonCreator
         public Function(
-                @JsonProperty("functionCall") FunctionCall functionCall,
-                @JsonProperty("signature") Signature signature,
+                @JsonProperty("functionCall") CallExpression functionCall,
                 @JsonProperty("frame") Frame frame)
         {
             this.functionCall = requireNonNull(functionCall, "functionCall is null");
-            this.signature = requireNonNull(signature, "Signature is null");
             this.frame = requireNonNull(frame, "Frame is null");
         }
 
         @JsonProperty
-        public FunctionCall getFunctionCall()
+        public CallExpression getFunctionCall()
         {
             return functionCall;
         }
 
         @JsonProperty
-        public Signature getSignature()
+        public FunctionHandle getFunctionHandle()
         {
-            return signature;
+            return functionCall.getFunctionHandle();
         }
 
         @JsonProperty
@@ -332,7 +373,7 @@ public class WindowNode
         @Override
         public int hashCode()
         {
-            return Objects.hash(functionCall, signature, frame);
+            return Objects.hash(functionCall, frame);
         }
 
         @Override
@@ -346,7 +387,6 @@ public class WindowNode
             }
             Function other = (Function) obj;
             return Objects.equals(this.functionCall, other.functionCall) &&
-                    Objects.equals(this.signature, other.signature) &&
                     Objects.equals(this.frame, other.frame);
         }
     }

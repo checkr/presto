@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.hive;
 
+import com.facebook.presto.hive.HiveBucketing.HiveBucketFilter;
 import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.predicate.TupleDomain;
 
@@ -33,25 +34,28 @@ public class HivePartitionResult
 {
     private final List<HiveColumnHandle> partitionColumns;
     private final List<HivePartition> partitions;
-    private final TupleDomain<? extends ColumnHandle> compactEffectivePredicate;
+    private final TupleDomain<? extends ColumnHandle> effectivePredicate;
     private final TupleDomain<ColumnHandle> unenforcedConstraint;
     private final TupleDomain<ColumnHandle> enforcedConstraint;
     private final Optional<HiveBucketHandle> bucketHandle;
+    private final Optional<HiveBucketFilter> bucketFilter;
 
     public HivePartitionResult(
             List<HiveColumnHandle> partitionColumns,
             List<HivePartition> partitions,
-            TupleDomain<? extends ColumnHandle> compactEffectivePredicate,
+            TupleDomain<? extends ColumnHandle> effectivePredicate,
             TupleDomain<ColumnHandle> unenforcedConstraint,
             TupleDomain<ColumnHandle> enforcedConstraint,
-            Optional<HiveBucketHandle> bucketHandle)
+            Optional<HiveBucketHandle> bucketHandle,
+            Optional<HiveBucketFilter> bucketFilter)
     {
         this.partitionColumns = requireNonNull(partitionColumns, "partitionColumns is null");
         this.partitions = requireNonNull(partitions, "partitions is null");
-        this.compactEffectivePredicate = requireNonNull(compactEffectivePredicate, "compactEffectivePredicate is null");
+        this.effectivePredicate = requireNonNull(effectivePredicate, "effectivePredicate is null");
         this.unenforcedConstraint = requireNonNull(unenforcedConstraint, "unenforcedConstraint is null");
         this.enforcedConstraint = requireNonNull(enforcedConstraint, "enforcedConstraint is null");
         this.bucketHandle = requireNonNull(bucketHandle, "bucketHandle is null");
+        this.bucketFilter = requireNonNull(bucketFilter, "bucketFilter is null");
     }
 
     public List<HiveColumnHandle> getPartitionColumns()
@@ -64,9 +68,9 @@ public class HivePartitionResult
         return partitions;
     }
 
-    public TupleDomain<? extends ColumnHandle> getCompactEffectivePredicate()
+    public TupleDomain<? extends ColumnHandle> getEffectivePredicate()
     {
-        return compactEffectivePredicate;
+        return effectivePredicate;
     }
 
     public TupleDomain<ColumnHandle> getUnenforcedConstraint()
@@ -82,5 +86,10 @@ public class HivePartitionResult
     public Optional<HiveBucketHandle> getBucketHandle()
     {
         return bucketHandle;
+    }
+
+    public Optional<HiveBucketFilter> getBucketFilter()
+    {
+        return bucketFilter;
     }
 }

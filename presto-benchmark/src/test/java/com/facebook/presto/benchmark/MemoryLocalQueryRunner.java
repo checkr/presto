@@ -20,13 +20,13 @@ import com.facebook.presto.memory.MemoryPool;
 import com.facebook.presto.memory.QueryContext;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.metadata.QualifiedObjectName;
-import com.facebook.presto.metadata.TableHandle;
 import com.facebook.presto.operator.Driver;
 import com.facebook.presto.operator.TaskContext;
 import com.facebook.presto.plugin.memory.MemoryConnectorFactory;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.Plugin;
 import com.facebook.presto.spi.QueryId;
+import com.facebook.presto.spi.TableHandle;
 import com.facebook.presto.spi.memory.MemoryPoolId;
 import com.facebook.presto.spiller.SpillSpaceTracker;
 import com.facebook.presto.testing.LocalQueryRunner;
@@ -41,12 +41,14 @@ import org.intellij.lang.annotations.Language;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
 import static io.airlift.units.DataSize.Unit.GIGABYTE;
 import static org.testng.Assert.assertTrue;
 
 public class MemoryLocalQueryRunner
+        implements AutoCloseable
 {
     protected final LocalQueryRunner localQueryRunner;
 
@@ -73,14 +75,12 @@ public class MemoryLocalQueryRunner
     public List<Page> execute(@Language("SQL") String query)
     {
         MemoryPool memoryPool = new MemoryPool(new MemoryPoolId("test"), new DataSize(2, GIGABYTE));
-        MemoryPool systemMemoryPool = new MemoryPool(new MemoryPoolId("testSystem"), new DataSize(2, GIGABYTE));
-
         SpillSpaceTracker spillSpaceTracker = new SpillSpaceTracker(new DataSize(1, GIGABYTE));
         QueryContext queryContext = new QueryContext(
                 new QueryId("test"),
                 new DataSize(1, GIGABYTE),
+                new DataSize(2, GIGABYTE),
                 memoryPool,
-                systemMemoryPool,
                 new TestingGcMonitor(),
                 localQueryRunner.getExecutor(),
                 localQueryRunner.getScheduler(),
@@ -91,6 +91,8 @@ public class MemoryLocalQueryRunner
                 .addTaskContext(new TaskStateMachine(new TaskId("query", 0, 0), localQueryRunner.getExecutor()),
                         localQueryRunner.getDefaultSession(),
                         false,
+                        false,
+                        OptionalInt.empty(),
                         false);
 
         // Use NullOutputFactory to avoid coping out results to avoid affecting benchmark results
@@ -136,5 +138,11 @@ public class MemoryLocalQueryRunner
         Optional<TableHandle> tableHandle = metadata.getTableHandle(session, QualifiedObjectName.valueOf(tableName));
         assertTrue(tableHandle.isPresent(), "Table " + tableName + " does not exist");
         metadata.dropTable(session, tableHandle.get());
+    }
+
+    @Override
+    public void close()
+    {
+        localQueryRunner.close();
     }
 }

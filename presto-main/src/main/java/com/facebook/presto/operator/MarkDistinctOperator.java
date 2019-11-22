@@ -16,9 +16,9 @@ package com.facebook.presto.operator;
 import com.facebook.presto.memory.context.LocalMemoryContext;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.block.Block;
+import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.gen.JoinCompiler;
-import com.facebook.presto.sql.planner.plan.PlanNodeId;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
@@ -67,12 +67,6 @@ public class MarkDistinctOperator
         }
 
         @Override
-        public List<Type> getTypes()
-        {
-            return types;
-        }
-
-        @Override
         public Operator createOperator(DriverContext driverContext)
         {
             checkState(!closed, "Factory is already closed");
@@ -94,7 +88,6 @@ public class MarkDistinctOperator
     }
 
     private final OperatorContext operatorContext;
-    private final List<Type> types;
     private final MarkDistinctHash markDistinctHash;
     private final LocalMemoryContext localUserMemoryContext;
 
@@ -108,7 +101,6 @@ public class MarkDistinctOperator
     {
         this.operatorContext = requireNonNull(operatorContext, "operatorContext is null");
 
-        this.types = ImmutableList.copyOf(requireNonNull(types, "types is null"));
         requireNonNull(hashChannel, "hashChannel is null");
         requireNonNull(markDistinctChannels, "markDistinctChannels is null");
 
@@ -124,12 +116,6 @@ public class MarkDistinctOperator
     public OperatorContext getOperatorContext()
     {
         return operatorContext;
-    }
-
-    @Override
-    public List<Type> getTypes()
-    {
-        return types;
     }
 
     @Override

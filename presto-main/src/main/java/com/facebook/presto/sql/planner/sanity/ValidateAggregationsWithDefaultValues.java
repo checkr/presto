@@ -14,28 +14,26 @@
 package com.facebook.presto.sql.planner.sanity;
 
 import com.facebook.presto.Session;
+import com.facebook.presto.execution.warnings.WarningCollector;
 import com.facebook.presto.metadata.Metadata;
-import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.spi.plan.PlanNode;
 import com.facebook.presto.sql.parser.SqlParser;
-import com.facebook.presto.sql.planner.Symbol;
+import com.facebook.presto.sql.planner.TypeProvider;
 import com.facebook.presto.sql.planner.optimizations.ActualProperties;
 import com.facebook.presto.sql.planner.optimizations.PropertyDerivations;
 import com.facebook.presto.sql.planner.optimizations.StreamPropertyDerivations;
 import com.facebook.presto.sql.planner.optimizations.StreamPropertyDerivations.StreamProperties;
 import com.facebook.presto.sql.planner.plan.AggregationNode;
 import com.facebook.presto.sql.planner.plan.ExchangeNode;
-import com.facebook.presto.sql.planner.plan.PlanNode;
-import com.facebook.presto.sql.planner.plan.PlanVisitor;
+import com.facebook.presto.sql.planner.plan.InternalPlanVisitor;
 import com.facebook.presto.sql.planner.sanity.PlanSanityChecker.Checker;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static com.facebook.presto.sql.planner.plan.AggregationNode.Step.FINAL;
 import static com.facebook.presto.sql.planner.plan.AggregationNode.Step.INTERMEDIATE;
 import static com.facebook.presto.sql.planner.plan.AggregationNode.Step.PARTIAL;
-import static com.facebook.presto.sql.planner.plan.ExchangeNode.Scope.REMOTE;
 import static com.facebook.presto.sql.planner.plan.ExchangeNode.Type.REPARTITION;
 import static com.facebook.presto.util.Optionals.combine;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -61,20 +59,20 @@ public class ValidateAggregationsWithDefaultValues
     }
 
     @Override
-    public void validate(PlanNode planNode, Session session, Metadata metadata, SqlParser sqlParser, Map<Symbol, Type> types)
+    public void validate(PlanNode planNode, Session session, Metadata metadata, SqlParser sqlParser, TypeProvider types, WarningCollector warningCollector)
     {
         planNode.accept(new Visitor(session, metadata, sqlParser, types), null);
     }
 
     private class Visitor
-            extends PlanVisitor<Optional<SeenExchanges>, Void>
+            extends InternalPlanVisitor<Optional<SeenExchanges>, Void>
     {
         final Session session;
         final Metadata metadata;
         final SqlParser parser;
-        final Map<Symbol, Type> types;
+        final TypeProvider types;
 
-        Visitor(Session session, Metadata metadata, SqlParser parser, Map<Symbol, Type> types)
+        Visitor(Session session, Metadata metadata, SqlParser parser, TypeProvider types)
         {
             this.session = requireNonNull(session, "session is null");
             this.metadata = requireNonNull(metadata, "metadata is null");
@@ -83,7 +81,7 @@ public class ValidateAggregationsWithDefaultValues
         }
 
         @Override
-        protected Optional<SeenExchanges> visitPlan(PlanNode node, Void context)
+        public Optional<SeenExchanges> visitPlan(PlanNode node, Void context)
         {
             return aggregatedSeenExchanges(node.getSources());
         }
@@ -145,7 +143,7 @@ public class ValidateAggregationsWithDefaultValues
             }
 
             SeenExchanges seenExchanges = seenExchangesOptional.get();
-            if (node.getScope().equals(REMOTE)) {
+            if (node.getScope().isRemote()) {
                 return Optional.of(new SeenExchanges(false, true));
             }
 

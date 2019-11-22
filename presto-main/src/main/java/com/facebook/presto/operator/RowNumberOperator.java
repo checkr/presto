@@ -19,9 +19,9 @@ import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
+import com.facebook.presto.spi.plan.PlanNodeId;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.gen.JoinCompiler;
-import com.facebook.presto.sql.planner.plan.PlanNodeId;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
@@ -53,7 +53,6 @@ public class RowNumberOperator
         private final List<Type> partitionTypes;
         private final Optional<Integer> hashChannel;
         private final int expectedPositions;
-        private final List<Type> types;
         private boolean closed;
         private final JoinCompiler joinCompiler;
 
@@ -80,14 +79,7 @@ public class RowNumberOperator
             this.hashChannel = requireNonNull(hashChannel, "hashChannel is null");
             checkArgument(expectedPositions > 0, "expectedPositions < 0");
             this.expectedPositions = expectedPositions;
-            this.types = toTypes(sourceTypes, outputChannels);
             this.joinCompiler = requireNonNull(joinCompiler, "joinCompiler is null");
-        }
-
-        @Override
-        public List<Type> getTypes()
-        {
-            return types;
         }
 
         @Override
@@ -133,7 +125,10 @@ public class RowNumberOperator
 
     private Page inputPage;
     private final LongBigArray partitionRowCount;
+
     private final Optional<Integer> maxRowsPerPartition;
+    // Only present if maxRowsPerPartition is present
+    private final Optional<PageBuilder> selectedRowPageBuilder;
 
     // for yield when memory is not available
     private Work<GroupByIdBlock> unfinishedWork;
@@ -152,7 +147,15 @@ public class RowNumberOperator
         this.operatorContext = requireNonNull(operatorContext, "operatorContext is null");
         this.localUserMemoryContext = operatorContext.localUserMemoryContext();
         this.outputChannels = Ints.toArray(outputChannels);
+        this.types = toTypes(sourceTypes, outputChannels);
+
         this.maxRowsPerPartition = maxRowsPerPartition;
+        if (maxRowsPerPartition.isPresent()) {
+            selectedRowPageBuilder = Optional.of(new PageBuilder(types));
+        }
+        else {
+            selectedRowPageBuilder = Optional.empty();
+        }
 
         this.partitionRowCount = new LongBigArray(0);
         if (partitionChannels.isEmpty()) {
@@ -162,19 +165,12 @@ public class RowNumberOperator
             int[] channels = Ints.toArray(partitionChannels);
             this.groupByHash = Optional.of(createGroupByHash(partitionTypes, channels, hashChannel, expectedPositions, isDictionaryAggregationEnabled(operatorContext.getSession()), joinCompiler, this::updateMemoryReservation));
         }
-        this.types = toTypes(sourceTypes, outputChannels);
     }
 
     @Override
     public OperatorContext getOperatorContext()
     {
         return operatorContext;
-    }
-
-    @Override
-    public List<Type> getTypes()
-    {
-        return types;
     }
 
     @Override
@@ -312,9 +308,11 @@ public class RowNumberOperator
 
     private Page getSelectedRows()
     {
-        PageBuilder pageBuilder = new PageBuilder(types);
-        int rowNumberChannel = types.size() - 1;
+        verify(selectedRowPageBuilder.isPresent());
 
+        int rowNumberChannel = types.size() - 1;
+        PageBuilder pageBuilder = selectedRowPageBuilder.get();
+        verify(pageBuilder.isEmpty());
         for (int currentPosition = 0; currentPosition < inputPage.getPositionCount(); currentPosition++) {
             long partitionId = getPartitionId(currentPosition);
             long rowCount = partitionRowCount.get(partitionId);
@@ -333,7 +331,10 @@ public class RowNumberOperator
         if (pageBuilder.isEmpty()) {
             return null;
         }
-        return pageBuilder.build();
+
+        Page page = pageBuilder.build();
+        pageBuilder.reset();
+        return page;
     }
 
     private long getPartitionId(int position)

@@ -2,7 +2,58 @@
 
 Presto is a distributed SQL query engine for big data.
 
-See the [User Manual](https://prestodb.io/docs/current/) for deployment instructions and end user documentation.
+See the [User Manual](https://prestodb.github.io/docs/current/) for deployment instructions and end user documentation.
+
+
+## JSON log
+We changed Presto log to be JSON to work with ElasticSearch.
+Install `log-manager` module. If `log-manager` version no longer matches (check `<dep.airlift.version><version></dep.airlift.version>` in the `properties` section of the top-level `pom.xml` file), it needs to be rebuilt from `Airlift` project.
+
+If you are rebuilding, `git clone` `Airlift` (depth=1, branch=<tag needed for presto build>) from here: https://github.com/airlift/airlift) and modify `log-manager/src/main/java/io/airlift/log/StaticFormatter.java`:
+After this line:
+```
+         StringWriter stringWriter = new StringWriter()
+```
+Remove all of the following lines beginning with `.append` except this one:
+```
+                 .append(record.getMessage());
+
+```
+Run the following command in the root folder of the `Airlift` project to build just the `log-manager` project:
+```
+mvn clean install -pl log-manager -DskipTests
+```
+
+Copy the log-manager-<version>.jar file from the `log-manager/target` folder to the `dependencies` folder in the `presto` project.
+
+In the `presto` project root folder:
+```
+mvn install:install-file -Dfile=dependencies/log-manager-0.178.jar -DgroupId=io.airlift -DartifactId=log-manager -Dversion=0.178 -Dpackaging=jar
+```
+
+## Merge upstream branch into fork
+    https://help.github.com/en/articles/merging-an-upstream-repository-into-your-fork
+
+Manually resolve issues merging checkr changes to FileBasedAccessControl.java to upstream `presto` code:
+1) Accept in-coming changes
+2) Remove duplicate code
+3) Change class name of Identity parameters to ConnectorIdentity
+4) Remove unused imports
+
+## Build all modules:
+```
+./mvnw clean install -DskipTests
+```
+
+## Copy compiled files
+After compiling `presto-server`, copy files the following files to a local clone of `preston` repo for testing:
+    From `client-server/target` directory of `presto` copy `presto-server-<version>-SNAPSHOT.tar.gz` as `presto-server.tar.gz`
+    From `presto-cli/target` directory of `presto` copy `presto-cli-<version>-SNAPSHOT-executable.jar` as `cli.jar`
+
+See "To test a new presto build" notes in the Preston Dockerfile
+
+After testing, copy files to S3: `us-east-1-checkr-data-warehouse/binaries`
+
 
 ## Checkr modifications
 
@@ -10,11 +61,11 @@ See the [User Manual](https://prestodb.io/docs/current/) for deployment instruct
 
 We change file based permission to allow creation and dropping schema.  
 `presto/presto-plugin-toolkit/src/main/java/com/facebook/presto/plugin/base/security/FileBasedAccessControl.java`  
-1. Build `presto-plugin-toolkit` module:
+1. If not rebuilding presto-server, build `presto-plugin-toolkit` module:
 ```
 mvn clean install -pl presto-plugin-toolkit -DskipTests
 ```
-2. Build modules depending on `presto-plugin-toolkit`:
+2. If not rebuilding presto-server, build modules depending on `presto-plugin-toolkit`:
 ```
 mvn clean install -pl presto-atop -DskipTests
 mvn clean install -pl presto-hive -DskipTests
@@ -22,28 +73,10 @@ mvn clean install -pl presto-raptor -DskipTests
 mvn clean install -pl presto-hive-hadoop2 -DskipTests
 ```
 
-### JSON log
-We changed Presto log to be JSON to work with ElasticSearch.
-1. Install `log-manager` module. If `log-manager` version no longer matches, it needs to be rebuilt from `Airlift` project.  
-If you are rebuilding, modify following lines from `log-manager/src/main/java/io/airlift/log/StaticFormatter.java`:
-```
-         StringWriter stringWriter = new StringWriter()
-                 .append(record.getMessage());
-```
-From project root:
-```
-mvn install:install-file -Dfile=dependencies/log-manager-0.198.jar -DgroupId=io.airlift -DartifactId=log-manager -Dversion=0.198 -Dpackaging=jar
-```
-2. Build `presto-server` module:
-```
-mvn clean install -pl presto-server -DskipTests
-```
-
-
 ## Requirements
 
 * Mac OS X or Linux
-* Java 8 Update 92 or higher (8u92+), 64-bit
+* Java 8 Update 151 or higher (8u151+), 64-bit. Both Oracle JDK and OpenJDK are supported.
 * Maven 3.3.9+ (for building)
 * Python 2.4+ (for running with the launcher script)
 
@@ -108,7 +141,7 @@ In the sample configuration, the Hive connector is mounted in the `hive` catalog
 
     SHOW TABLES FROM hive.default;
 
-## Developers
+## Code Style
 
 We recommend you use IntelliJ as your IDE. The code style template for the project can be found in the [codestyle](https://github.com/airlift/codestyle) repository along with our general programming and Java guidelines. In addition to those you should also adhere to the following:
 
@@ -120,3 +153,24 @@ We recommend you use IntelliJ as your IDE. The code style template for the proje
 * Avoid using the ternary operator except for trivial expressions.
 * Use an assertion from Airlift's `Assertions` class if there is one that covers your case rather than writing the assertion by hand. Over time we may move over to more fluent assertions like AssertJ.
 * When writing a Git commit message, follow these [guidelines](https://chris.beams.io/posts/git-commit/).
+
+## Building the Web UI
+
+The Presto Web UI is composed of several React components and is written in JSX and ES6. This source code is compiled and packaged into browser-compatible Javascript, which is then checked in to the Presto source code (in the `dist` folder). You must have [Node.js](https://nodejs.org/en/download/) and [Yarn](https://yarnpkg.com/en/) installed to execute these commands. To update this folder after making changes, simply run:
+
+    yarn --cwd presto-main/src/main/resources/webapp/src install
+
+If no Javascript dependencies have changed (i.e., no changes to `package.json`), it is faster to run:
+
+    yarn --cwd presto-main/src/main/resources/webapp/src run package
+
+To simplify iteration, you can also run in `watch` mode, which automatically re-compiles when changes to source files are detected:
+
+    yarn --cwd presto-main/src/main/resources/webapp/src run watch
+
+To iterate quickly, simply re-build the project in IntelliJ after packaging is complete. Project resources will be hot-reloaded and changes are reflected on browser refresh.
+
+## Release Notes
+
+When authoring a pull request, the PR description should include its relevant release notes.
+Follow [Release Notes Guidelines](https://github.com/prestodb/presto/wiki/Release-Notes-Guidelines) when authoring release notes. 

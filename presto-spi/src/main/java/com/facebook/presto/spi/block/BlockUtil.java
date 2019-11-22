@@ -49,6 +49,13 @@ final class BlockUtil
         }
     }
 
+    static void checkValidPositions(boolean[] positions, int positionCount)
+    {
+        if (positions.length != positionCount) {
+            throw new IllegalArgumentException(format("Invalid positions array size %d, actual position count is %d", positions.length, positionCount));
+        }
+    }
+
     static void checkValidPosition(int position, int positionCount)
     {
         if (position < 0 || position >= positionCount) {
@@ -59,7 +66,7 @@ final class BlockUtil
     static int calculateNewArraySize(int currentSize)
     {
         // grow array by 50%
-        long newSize = currentSize + (currentSize >> 1);
+        long newSize = (long) currentSize + (currentSize >> 1);
 
         // verify new size is within reasonable bounds
         if (newSize < DEFAULT_CAPACITY) {
@@ -174,6 +181,17 @@ final class BlockUtil
         return Arrays.copyOfRange(array, index, index + length);
     }
 
+    static int countUsedPositions(boolean[] positions)
+    {
+        int used = 0;
+        for (boolean position : positions) {
+            if (position) {
+                used++;
+            }
+        }
+        return used;
+    }
+
     /**
      * Returns <tt>true</tt> if the two specified arrays contain the same object in every position.
      * Unlike the {@link Arrays#equals(Object[], Object[])} method, this method compares using reference equals.
@@ -190,5 +208,12 @@ final class BlockUtil
             }
         }
         return true;
+    }
+
+    public static boolean internalPositionInRange(int internalPosition, int offset, int positionCount)
+    {
+        boolean withinRange = internalPosition >= offset && internalPosition < positionCount + offset;
+        assert withinRange : format("internalPosition %s is not within range [%s, %s)", internalPosition, offset, positionCount + offset);
+        return withinRange;
     }
 }
